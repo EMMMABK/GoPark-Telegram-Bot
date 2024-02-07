@@ -1,4 +1,4 @@
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher
 import tracemalloc
 import os
 import logging
@@ -8,6 +8,13 @@ from aiogram.utils import executor
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import StatesGroup, State
 import pymongo
+from aiogram.types import (
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    Message,
+    CallbackQuery,
+)
+
 
 tracemalloc.start()
 
@@ -25,23 +32,31 @@ class States(StatesGroup):
 
 async def db_start():
     client = pymongo.MongoClient("mongodb://localhost:27017/")
-    db = client["mydatabase"]  
-    collection = db["mycollection"]  
-
+    db = client["mydatabase"]
+    collection = db["mycollection"]
 
 
 @dp.message_handler(commands=["start"])
-async def cmd_start(message: types.Message):
+async def cmd_start(message: Message):
     await message.answer(
         "Привет! Я бот от GoPark - инновационной платформы для совместных поездок и оптимизации парковочных мест. "
         "Благодаря интеграции данных в реальном времени, мы предоставляем актуальную информацию о свободных парковочных местах и помогаем в поиске попутчиков. "
         "У нас удобный интерфейс, фокус на безопасности и устойчивости. Давайте начнем!\n\n"
         "Введите /help, чтобы узнать больше команд."
     )
-    
-    
-@dp.message_handler(commands=['about'])
-async def cmd_about(message: types.Message, state: FSMContext):
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+    buttons = [
+        KeyboardButton(text="Искать парковки"),
+        KeyboardButton(text="Искать попутчиков"),
+        KeyboardButton(text="Искать водителей"),
+    ]
+    keyboard.add(*buttons)
+
+    await message.answer("Выберите действие:", reply_markup=keyboard)
+
+
+@dp.message_handler(commands=["about"])
+async def cmd_about(message: Message):
     about_text = (
         "Привет! Я - бот от GoPark, инновационной платформы для совместных поездок и оптимизации парковочных мест. "
         "Мы стремимся сделать перемещения удобными и экологически устойчивыми. Наша платформа объединяет водителей и пассажиров, "
@@ -53,35 +68,48 @@ async def cmd_about(message: types.Message, state: FSMContext):
         "Введите /help, чтобы узнать больше команд"
     )
     await message.answer(about_text)
-    
-    
 
-@dp.message_handler(commands=['help'])
-async def cmd_about(message: types.Message, state: FSMContext):
-    about_text = (
-        "Команда /help здесь будут все команды бота"
-    )
+
+@dp.message_handler(commands=["help"])
+async def cmd_about(
+    message: Message,
+):
+    about_text = "Команда /help здесь будут все команды бота"
     await message.answer(about_text)
 
 
-
-
-
-@dp.message_handler(commands=['feedback'], state="*")
-async def cmd_feedback(message: types.Message, state: FSMContext):
-    await message.answer("Вы можете отправить ваш отзыв, вопрос или пожелание. Введите текст сообщения:")
+@dp.message_handler(commands=["feedback"], state="*")
+async def cmd_feedback(message: Message, state: FSMContext):
+    await message.answer(
+        "Вы можете отправить ваш отзыв, вопрос или пожелание. Введите текст сообщения:"
+    )
     await States.FEEDBACK.set()
 
 
 @dp.message_handler(state=States.FEEDBACK)
-async def process_feedback(message: types.Message, state: FSMContext):
+async def process_feedback(message: Message, state: FSMContext):
     user_username = message.from_user.username or "Нет никнейма"
-    await bot.send_message(admin_id, f"Отзыв от пользователя {user_username} (ID {message.from_user.id}):\n\n\n{message.text}")
+    await bot.send_message(
+        admin_id,
+        f"Отзыв от пользователя {user_username} (ID {message.from_user.id}):\n\n\n{message.text}",
+    )
     await message.answer("Спасибо за ваш отзыв! Мы ценим ваше мнение.")
     await state.finish()
-    
-    
 
+
+@dp.message_handler(lambda message: message.text == "Искать парковки", state="*")
+async def cmd_search_parking(message: Message):
+    await message.answer("Здесь вы можете искать парковки.")
+
+
+@dp.message_handler(lambda message: message.text == "Искать попутчиков", state="*")
+async def cmd_find_passenger(message: Message):
+    await message.answer("Здесь вы можете искать попутчиков.")
+
+
+@dp.message_handler(lambda message: message.text == "Искать водителей", state="*")
+async def cmd_find_driver(message: Message):
+    await message.answer("Здесь вы можете искать водителей.")
 
 
 async def on_startup(_):
