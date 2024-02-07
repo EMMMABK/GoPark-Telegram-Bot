@@ -7,6 +7,7 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.utils import executor
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import StatesGroup, State
+import pymongo
 
 tracemalloc.start()
 
@@ -23,8 +24,10 @@ class States(StatesGroup):
 
 
 async def db_start():
-    # подключение монгодб
-    pass
+    client = pymongo.MongoClient("mongodb://localhost:27017/")
+    db = client["mydatabase"]  
+    collection = db["mycollection"]  
+
 
 
 @dp.message_handler(commands=["start"])
