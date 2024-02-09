@@ -12,7 +12,6 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
     KeyboardButton,
     Message,
-    CallbackQuery,
 )
 
 
@@ -30,7 +29,26 @@ class States(StatesGroup):
     FEEDBACK = State()
 
 
+class TripSearch(StatesGroup):
+    START = State()
+    LOCATION_FROM = State()
+    LOCATION_TO = State()
+    MAX_PRICE = State()
+
+
+class TripCreation(StatesGroup):
+    NAME = State()
+    PHONE = State()
+    DATE = State()
+    START_LOCATION = State()
+    END_LOCATION = State()
+    PRICE = State()
+    CAR_INFO = State()
+
+
 async def db_start():
+    global client, db, collection
+
     client = pymongo.MongoClient("mongodb://localhost:27017/")
     db = client["mydatabase"]
     collection = db["mycollection"]
@@ -47,8 +65,8 @@ async def cmd_start(message: Message):
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     buttons = [
         KeyboardButton(text="Искать парковки"),
-        KeyboardButton(text="Искать попутчиков"),
         KeyboardButton(text="Искать водителей"),
+        KeyboardButton(text="Создать пост о поездке"),
     ]
     keyboard.add(*buttons)
 
@@ -97,20 +115,130 @@ async def process_feedback(message: Message, state: FSMContext):
     await state.finish()
 
 
-@dp.message_handler(lambda message: message.text == "Искать парковки", state="*")
-async def cmd_search_parking(message: Message):
-    await message.answer("Здесь вы можете искать парковки.")
+# -----------------
+
+@dp.message_handler(lambda message: message.text == "Создать пост о поездке")
+async def cmd_create_trip(message: Message):
+    await message.answer("Давайте создадим пост о поездке. Введите ваше имя:")
+    await TripCreation.NAME.set()
 
 
-@dp.message_handler(lambda message: message.text == "Искать попутчиков", state="*")
-async def cmd_find_passenger(message: Message):
-    await message.answer("Здесь вы можете искать попутчиков.")
+@dp.message_handler(state=TripCreation.NAME)
+async def process_name(message: Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["name"] = message.text
+    await message.answer("Введите ваш номер телефона:")
+    await TripCreation.PHONE.set()
 
 
-@dp.message_handler(lambda message: message.text == "Искать водителей", state="*")
-async def cmd_find_driver(message: Message):
-    await message.answer("Здесь вы можете искать водителей.")
+@dp.message_handler(state=TripCreation.PHONE)
+async def process_phone(message: Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["phone"] = message.text
+    await message.answer("Введите дату вашей поездки:")
+    await TripCreation.DATE.set()
 
+
+@dp.message_handler(state=TripCreation.DATE)
+async def process_date(message: Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["date"] = message.text
+    await message.answer("Введите место отправления:")
+    await TripCreation.START_LOCATION.set()
+
+
+@dp.message_handler(state=TripCreation.START_LOCATION)
+async def process_start_location(message: Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["start_location"] = message.text
+    await message.answer("Введите место назначения:")
+    await TripCreation.END_LOCATION.set()
+
+
+@dp.message_handler(state=TripCreation.END_LOCATION)
+async def process_end_location(message: Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["end_location"] = message.text
+    await message.answer("Введите стоимость поездки в  сомах:")
+    await TripCreation.PRICE.set()
+
+
+@dp.message_handler(state=TripCreation.PRICE)
+async def process_price(message: Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["price"] = message.text
+    await message.answer(
+        "Введите информацию о вашем автомобиле ( марка, модель, госномер):"
+    )
+    await TripCreation.CAR_INFO.set()
+
+
+@dp.message_handler(state=TripCreation.CAR_INFO)
+async def process_car_info(message: Message, state: FSMContext):
+    async with state.proxy() as data:
+        db["mycollection"].insert_one(data)
+    await message.answer("Ваш пост о поездке успешно создан!")
+    await state.finish()
+
+
+# -----------
+
+
+@dp.message_handler(lambda message: message.text == "Искать водителей")
+async def cmd_search_drivers(message: Message):
+    await message.answer(
+        "Введите критерии поиска водителей, например, место отправления, место назначения, цену и т.д."
+    )
+    await TripSearch.START.set()
+
+
+@dp.message_handler(state=TripSearch.START)
+async def process_search_start(message: Message, state: FSMContext):
+    await message.answer("Введите место отправления:")
+    await TripSearch.LOCATION_FROM.set()
+
+
+@dp.message_handler(state=TripSearch.LOCATION_FROM)
+async def process_search_location_from(message: Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["location_from"] = message.text
+    await message.answer("Введите место назначения:")
+    await TripSearch.LOCATION_TO.set()
+
+
+@dp.message_handler(state=TripSearch.LOCATION_TO)
+async def process_search_location_to(message: Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["location_to"] = message.text
+    await message.answer("Введите максимальную цену:")
+    await TripSearch.MAX_PRICE.set()
+
+
+@dp.message_handler(state=TripSearch.MAX_PRICE)
+async def process_search_max_price(message: Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["max_price"] = float(message.text) 
+    criteria = {
+        "start_location": data["location_from"],
+        "end_location": data["location_to"],
+        "price": {"$lte": data["max_price"]},
+    }
+    trip_posts = db["mycollection"].find(criteria)
+
+    result_text = "Результаты поиска водителей:\n"
+    for post in trip_posts:
+        result_text += (
+            f"Имя: {post['name']}\nТелефон: {post['phone']}\nДата: {post['date']}\n"
+            f"Отправление: {post['start_location']}\nНазначение: {post['end_location']}\n"
+            f"Цена: {post['price']} сом\n"
+            f"Информация о машине: {post.get('car_info', 'Нет информации')}\n\n"
+        )
+    await message.answer(result_text or "Нет результатов по вашему запросу.")
+    await state.finish()
+
+
+
+#parking slots occupied detection vnizu budet
 
 async def on_startup(_):
     await db_start()
