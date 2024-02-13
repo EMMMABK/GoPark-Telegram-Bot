@@ -76,8 +76,8 @@ async def db_start():
     global client, db, collection
 
     client = pymongo.MongoClient("mongodb://localhost:27017/")
-    db = client["mydatabase"]
-    collection = db["mycollection"]
+    db = client[os.getenv("DB")]
+    collection = db[os.getenv("MY_COLLECTION")]
 
 
 @dp.message_handler(commands=["start"])
