@@ -75,8 +75,8 @@ def is_valid_phone_number(phone):
 async def db_start():
     global client, db, collection
 
-    client = pymongo.MongoClient("mongodb://localhost:27017/")
-    db = client[os.getenv("DB")]
+    cluster = pymongo.MongoClient(os.getenv("CLUSTER"))
+    db = cluster["GoPark-DataBase"]
     collection = db[os.getenv("MY_COLLECTION")]
 
 
