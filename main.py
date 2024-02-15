@@ -1,4 +1,4 @@
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher
 import tracemalloc
 import os
 import logging
@@ -16,6 +16,8 @@ from aiogram.types import (
     InlineKeyboardButton,
     CallbackQuery,
 )
+import re
+
 
 tracemalloc.start()
 
@@ -64,6 +66,10 @@ async def register_user(user_id, user_name, phone):
         db["users"].insert_one(user_data)
 
 
+def is_valid_name(name):
+    return bool(re.match("^[a-zA-Z]+$", name))
+
+
 async def get_user_info(user_id):
     return db["users"].find_one({"_id": user_id})
 
@@ -78,6 +84,12 @@ async def db_start():
     cluster = pymongo.MongoClient(os.getenv("CLUSTER"))
     db = cluster["GoPark-DataBase"]
     collection = db[os.getenv("MY_COLLECTION")]
+
+
+@dp.message_handler(commands=["cancel"], state="*")
+async def cmd_cancel(message: Message, state: FSMContext):
+    await message.answer("Действие отменено.")
+    await state.finish()
 
 
 @dp.message_handler(commands=["start"])
@@ -108,6 +120,12 @@ async def process_register_name(message: Message, state: FSMContext):
     user_id = message.from_user.id
     user_name = message.text
 
+    if not is_valid_name(user_name):
+        await message.answer(
+            "Неверный формат имени. Пожалуйста, используйте только буквы."
+        )
+        return
+
     async with state.proxy() as data:
         data["user_id"] = user_id
         data["user_name"] = user_name
@@ -122,7 +140,7 @@ async def process_register_phone(message: Message, state: FSMContext):
 
     if not is_valid_phone_number(phone):
         await message.answer(
-            "Неверный формат номера. Пожалуйста, введите номер в формате +996XXXXXXXXX."
+            "Неверный формат номера. Пожалуйста, введите номер в формате +996XXXXXXXXX. "
         )
         return
 
@@ -180,7 +198,7 @@ async def cmd_about(
 @dp.message_handler(commands=["feedback"], state="*")
 async def cmd_feedback(message: Message, state: FSMContext):
     await message.answer(
-        "Вы можете отправить ваш отзыв, вопрос или пожелание. Введите текст сообщения:"
+        "Вы можете отправить ваш отзыв, вопрос или пожелание. Введите текст сообщения:  Чтоб отменить действие используйте команду /cancel"
     )
     await FeedBackState.FEEDBACK.set()
 
@@ -209,7 +227,7 @@ async def cmd_create_trip(message: Message):
 async def process_date(message: Message, state: FSMContext):
     async with state.proxy() as data:
         data["date"] = message.text
-    await message.answer("Введите место отправления:")
+    await message.answer("Введите место отправления:  \nЧтоб отменить действие используйте команду /cancel")
     await TripCreation.START_LOCATION.set()
 
 
@@ -217,7 +235,7 @@ async def process_date(message: Message, state: FSMContext):
 async def process_start_location(message: Message, state: FSMContext):
     async with state.proxy() as data:
         data["start_location"] = message.text
-    await message.answer("Введите место назначения:")
+    await message.answer("Введите место назначения:   \nЧтоб отменить действие используйте команду /cancel")
     await TripCreation.END_LOCATION.set()
 
 
@@ -225,16 +243,22 @@ async def process_start_location(message: Message, state: FSMContext):
 async def process_end_location(message: Message, state: FSMContext):
     async with state.proxy() as data:
         data["end_location"] = message.text
-    await message.answer("Введите стоимость поездки в сомах:")
+    await message.answer("Введите стоимость поездки в сомах:   \nЧтоб отменить действие используйте команду /cancel")
     await TripCreation.PRICE.set()
 
 
 @dp.message_handler(state=TripCreation.PRICE)
 async def process_price(message: Message, state: FSMContext):
+    try:
+        price = float(message.text)
+    except ValueError:
+        await message.answer("Неверный формат цены. Пожалуйста, введите число.   \nЧтоб отменить действие используйте команду /cancel")
+        return
+
     async with state.proxy() as data:
-        data["price"] = message.text
+        data["price"] = price
     await message.answer(
-        "Введите информацию о вашем автомобиле (марка, модель, госномер):"
+        "Введите информацию о вашем автомобиле (марка, модель, госномер):   \nЧтоб отменить действие используйте команду /cancel"
     )
     await TripCreation.CAR_INFO.set()
 
@@ -243,7 +267,7 @@ async def process_price(message: Message, state: FSMContext):
 async def process_car_info(message: Message, state: FSMContext):
     async with state.proxy() as data:
         data["car_info"] = message.text
-        data["applicants"] = []  # Initialize empty list for applicants
+        data["applicants"] = []
 
         db["mycollection"].insert_one(data)
 
@@ -281,14 +305,14 @@ async def process_car_info(message: Message, state: FSMContext):
 @dp.message_handler(lambda message: message.text == "Искать водителей")
 async def cmd_search_drivers(message: Message):
     await message.answer(
-        "Введите критерии поиска водителей, например, место отправления, место назначения, цену и т.д."
+        "Введите критерии поиска водителей, например, место отправления, место назначения, цену и т.д.   \nЧтоб отменить действие используйте команду /cancel"
     )
     await TripSearch.START.set()
 
 
 @dp.message_handler(state=TripSearch.START)
 async def process_search_start(message: Message, state: FSMContext):
-    await message.answer("Введите место отправления:")
+    await message.answer("Введите место отправления:   \nЧтоб отменить действие используйте команду /cancel")
     await TripSearch.LOCATION_FROM.set()
 
 
@@ -296,7 +320,7 @@ async def process_search_start(message: Message, state: FSMContext):
 async def process_search_location_from(message: Message, state: FSMContext):
     async with state.proxy() as data:
         data["location_from"] = message.text
-    await message.answer("Введите место назначения:")
+    await message.answer("Введите место назначения:   \nЧтоб отменить действие используйте команду /cancel")
     await TripSearch.LOCATION_TO.set()
 
 
@@ -304,20 +328,35 @@ async def process_search_location_from(message: Message, state: FSMContext):
 async def process_search_location_to(message: Message, state: FSMContext):
     async with state.proxy() as data:
         data["location_to"] = message.text
-    await message.answer("Введите максимальную цену:")
+    await message.answer("Введите максимальную цену:   \nЧтоб отменить действие используйте команду /cancel")
     await TripSearch.MAX_PRICE.set()
 
 
 @dp.message_handler(state=TripSearch.MAX_PRICE)
 async def process_search_max_price(message: Message, state: FSMContext):
+    max_price_str = message.text.strip()
+
+    # Validate that max_price_str is a valid positive float
+    try:
+        max_price = float(max_price_str)
+        if max_price <= 0:
+            raise ValueError("Max price must be a positive number.   \nЧтоб отменить действие используйте команду /cancel")
+    except ValueError:
+        await message.answer(
+            "Неверный формат максимальной цены. Пожалуйста, введите положительное число.   \nЧтоб отменить действие используйте команду /cancel"
+        )
+        return
+
     async with state.proxy() as data:
-        data["max_price"] = float(message.text)
+        data["max_price"] = max_price
+
     criteria = {
         "start_location": data["location_from"],
         "end_location": data["location_to"],
         "price": {"$lte": data["max_price"]},
         "applicants": {"$not": {"$size": 1}},
     }
+
     trip_posts = db["mycollection"].find(criteria)
 
     inline_keyboard = InlineKeyboardMarkup()
