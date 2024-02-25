@@ -17,7 +17,7 @@ from aiogram.types import (
     CallbackQuery,
 )
 import re
-
+from bson import ObjectId
 
 tracemalloc.start()
 
@@ -52,6 +52,11 @@ class TripCreation(StatesGroup):
     PRICE = State()
     CAR_INFO = State()
     APPLICANTS = State()
+    MAX_APPLICANTS = State()
+
+
+class ApplyTrip(StatesGroup):
+    MEETING_POINT = State()
 
 
 async def register_user(user_id, user_name, phone):
@@ -79,7 +84,7 @@ def is_valid_phone_number(phone):
 
 
 async def db_start():
-    global client, db, collection
+    global db, collection
 
     cluster = pymongo.MongoClient(os.getenv("CLUSTER"))
     db = cluster["GoPark-DataBase"]
@@ -219,7 +224,9 @@ async def process_feedback(message: Message, state: FSMContext):
 
 @dp.message_handler(lambda message: message.text == "Создать пост о поездке")
 async def cmd_create_trip(message: Message):
-    await message.answer("Давайте создадим пост о поездке.")
+    await message.answer(
+        "Давайте создадим пост о поездке. Отправьте время и дату выезда"
+    )
     await TripCreation.DATE.set()
 
 
@@ -227,7 +234,9 @@ async def cmd_create_trip(message: Message):
 async def process_date(message: Message, state: FSMContext):
     async with state.proxy() as data:
         data["date"] = message.text
-    await message.answer("Введите место отправления:  \nЧтоб отменить действие используйте команду /cancel")
+    await message.answer(
+        "Введите место отправления:  \nЧтоб отменить действие используйте команду /cancel"
+    )
     await TripCreation.START_LOCATION.set()
 
 
@@ -235,7 +244,9 @@ async def process_date(message: Message, state: FSMContext):
 async def process_start_location(message: Message, state: FSMContext):
     async with state.proxy() as data:
         data["start_location"] = message.text
-    await message.answer("Введите место назначения:   \nЧтоб отменить действие используйте команду /cancel")
+    await message.answer(
+        "Введите место назначения:   \nЧтоб отменить действие используйте команду /cancel"
+    )
     await TripCreation.END_LOCATION.set()
 
 
@@ -243,7 +254,9 @@ async def process_start_location(message: Message, state: FSMContext):
 async def process_end_location(message: Message, state: FSMContext):
     async with state.proxy() as data:
         data["end_location"] = message.text
-    await message.answer("Введите стоимость поездки в сомах:   \nЧтоб отменить действие используйте команду /cancel")
+    await message.answer(
+        "Введите стоимость поездки в сомах:   \nЧтоб отменить действие используйте команду /cancel"
+    )
     await TripCreation.PRICE.set()
 
 
@@ -252,7 +265,9 @@ async def process_price(message: Message, state: FSMContext):
     try:
         price = float(message.text)
     except ValueError:
-        await message.answer("Неверный формат цены. Пожалуйста, введите число.   \nЧтоб отменить действие используйте команду /cancel")
+        await message.answer(
+            "Неверный формат цены. Пожалуйста, введите число.   \nЧтоб отменить действие используйте команду /cancel"
+        )
         return
 
     async with state.proxy() as data:
@@ -268,6 +283,8 @@ async def process_car_info(message: Message, state: FSMContext):
     async with state.proxy() as data:
         data["car_info"] = message.text
         data["applicants"] = []
+        data["user_id"] = message.from_user.id
+        data = dict(data)
 
         db["mycollection"].insert_one(data)
 
@@ -303,16 +320,10 @@ async def process_car_info(message: Message, state: FSMContext):
 
 
 @dp.message_handler(lambda message: message.text == "Искать водителей")
-async def cmd_search_drivers(message: Message):
-    await message.answer(
-        "Введите критерии поиска водителей, например, место отправления, место назначения, цену и т.д.   \nЧтоб отменить действие используйте команду /cancel"
-    )
-    await TripSearch.START.set()
-
-
-@dp.message_handler(state=TripSearch.START)
 async def process_search_start(message: Message, state: FSMContext):
-    await message.answer("Введите место отправления:   \nЧтоб отменить действие используйте команду /cancel")
+    await message.answer(
+        "Введите место отправления:   \nЧтоб отменить действие используйте команду /cancel"
+    )
     await TripSearch.LOCATION_FROM.set()
 
 
@@ -320,7 +331,9 @@ async def process_search_start(message: Message, state: FSMContext):
 async def process_search_location_from(message: Message, state: FSMContext):
     async with state.proxy() as data:
         data["location_from"] = message.text
-    await message.answer("Введите место назначения:   \nЧтоб отменить действие используйте команду /cancel")
+    await message.answer(
+        "Введите место назначения:   \nЧтоб отменить действие используйте команду /cancel"
+    )
     await TripSearch.LOCATION_TO.set()
 
 
@@ -328,7 +341,9 @@ async def process_search_location_from(message: Message, state: FSMContext):
 async def process_search_location_to(message: Message, state: FSMContext):
     async with state.proxy() as data:
         data["location_to"] = message.text
-    await message.answer("Введите максимальную цену:   \nЧтоб отменить действие используйте команду /cancel")
+    await message.answer(
+        "Введите максимальную цену:   \nЧтоб отменить действие используйте команду /cancel"
+    )
     await TripSearch.MAX_PRICE.set()
 
 
@@ -336,11 +351,12 @@ async def process_search_location_to(message: Message, state: FSMContext):
 async def process_search_max_price(message: Message, state: FSMContext):
     max_price_str = message.text.strip()
 
-    # Validate that max_price_str is a valid positive float
     try:
         max_price = float(max_price_str)
         if max_price <= 0:
-            raise ValueError("Max price must be a positive number.   \nЧтоб отменить действие используйте команду /cancel")
+            raise ValueError(
+                "Max price must be a positive number.   \nЧтоб отменить действие используйте команду /cancel"
+            )
     except ValueError:
         await message.answer(
             "Неверный формат максимальной цены. Пожалуйста, введите положительное число.   \nЧтоб отменить действие используйте команду /cancel"
@@ -359,16 +375,15 @@ async def process_search_max_price(message: Message, state: FSMContext):
 
     trip_posts = db["mycollection"].find(criteria)
 
-    inline_keyboard = InlineKeyboardMarkup()
-
-    result_text = "Результаты поиска водителей:\n"
     for post in trip_posts:
-        result_text += (
-            f"Имя: {post['name']}\nТелефон: {post['phone']}\nДата: {post['date']}\n"
+        result_text = (
+            f"Дата: {post['date']}\n"
             f"Отправление: {post['start_location']}\nНазначение: {post['end_location']}\n"
             f"Цена: {post['price']} сом\n"
             f"Информация о машине: {post['car_info']}\n\n"
         )
+
+        inline_keyboard = InlineKeyboardMarkup()
 
         apply_button = InlineKeyboardButton(
             text="Apply for Trip",
@@ -376,41 +391,46 @@ async def process_search_max_price(message: Message, state: FSMContext):
         )
         inline_keyboard.add(apply_button)
 
-    await message.answer(
-        result_text or "Нет результатов по вашему запросу.",
-        reply_markup=inline_keyboard,
-    )
+        await message.answer(result_text, reply_markup=inline_keyboard)
+
     await state.finish()
 
 
 @dp.callback_query_handler(lambda query: query.data.startswith("apply_trip_"))
 async def process_apply_button(callback_query: CallbackQuery):
     post_id = callback_query.data.split("_")[2]
+    post_id = ObjectId(post_id)
 
     post_info = db["mycollection"].find_one({"_id": post_id})
 
-    applicant_id = callback_query.from_user.id
-    applicant_info = await get_user_info(applicant_id)
+    if post_info:
+        applicant_id = callback_query.from_user.id
+        applicant_info = await get_user_info(applicant_id)
 
-    if applicant_info and post_info:
-        owner_id = post_info["user_id"]
-        owner_info = await get_user_info(owner_id)
-
-        if owner_info:
+        if applicant_info:
             applicant_name = applicant_info["name"]
             applicant_phone = applicant_info["phone"]
 
             if applicant_id not in post_info["applicants"]:
                 post_info["applicants"].append(applicant_id)
                 db["mycollection"].update_one(
-                    {"_id": post_id}, {"$set": {"applicants": post_info["applicants"]}}
+                    {"_id": post_id},
+                    {
+                        "$set": {
+                            "applicants": post_info["applicants"],
+                            "applicant_name": applicant_name,
+                            "applicant_phone": applicant_phone,
+                        }
+                    },
                 )
 
                 notification_text = (
                     f"New application for your trip!\n\n"
-                    f"Applicant Name: {applicant_name}\nApplicant Phone: {applicant_phone}"
+                    f"Applicant Name: {applicant_name}\n"
+                    f"Applicant Phone: {applicant_phone}"
                 )
 
+                owner_id = post_info["user_id"]
                 await bot.send_message(owner_id, notification_text)
 
                 await bot.answer_callback_query(
@@ -422,11 +442,11 @@ async def process_apply_button(callback_query: CallbackQuery):
                 )
         else:
             await bot.answer_callback_query(
-                callback_query.id, text="Trip owner information not found."
+                callback_query.id, text="Applicant information not found."
             )
     else:
         await bot.answer_callback_query(
-            callback_query.id, text="Post or applicant information not found."
+            callback_query.id, text="Post information not found."
         )
 
 
@@ -447,6 +467,138 @@ async def cmd_account(message: Message):
         await message.answer(account_info)
     else:
         await message.answer("Вы не зарегистрированы. Введите /start для регистрации.")
+
+
+@dp.message_handler(commands=["mytrips"])
+async def cmd_my_trips(message: Message):
+    user_id = message.from_user.id
+    user_trips = db["mycollection"].find({"user_id": user_id})
+
+    if user_trips:
+        for trip in user_trips:
+            inline_keyboard = InlineKeyboardMarkup()
+            delete_button = InlineKeyboardButton(
+                text="Delete Trip",
+                callback_data=f"delete_trip_{trip['_id']}",
+            )
+            inline_keyboard.add(delete_button)
+
+            trip_info = (
+                f"Date: {trip['date']}\n"
+                f"Start Location: {trip['start_location']}\n"
+                f"End Location: {trip['end_location']}\n"
+                f"Price: {trip['price']} som\n"
+                f"Car Info: {trip['car_info']}"
+            )
+
+            await message.answer(trip_info, reply_markup=inline_keyboard)
+    else:
+        await message.answer("You haven't created any trips yet.")
+
+
+@dp.callback_query_handler(lambda query: query.data.startswith("delete_trip_"))
+async def process_delete_trip_button(callback_query: CallbackQuery):
+    trip_id = callback_query.data.split("_")[2]
+    trip_id = ObjectId(trip_id)
+
+    trip_info = db["mycollection"].find_one({"_id": trip_id})
+
+    if trip_info:
+        owner_id = trip_info["user_id"]
+        applicants_ids = trip_info["applicants"]
+
+        if owner_id == callback_query.from_user.id:
+            await bot.send_message(owner_id, "Your trip has been deleted.")
+
+            for applicant_id in applicants_ids:
+                await bot.send_message(
+                    applicant_id, "The trip you applied for has been canceled."
+                )
+
+            db["mycollection"].delete_one({"_id": trip_id})
+
+            await bot.answer_callback_query(
+                callback_query.id, text="Trip successfully deleted."
+            )
+        else:
+            await bot.answer_callback_query(
+                callback_query.id, text="You are not the owner of this trip."
+            )
+    else:
+        await bot.answer_callback_query(
+            callback_query.id, text="Trip information not found."
+        )
+
+
+@dp.message_handler(commands=["myapplies"])
+async def cmd_my_applies(message: Message):
+    user_id = message.from_user.id
+    user_applies = db["mycollection"].find({"applicants": {"$in": [user_id]}})
+
+    if user_applies:
+        for trip in user_applies:
+            inline_keyboard = InlineKeyboardMarkup()
+            cancel_button = InlineKeyboardButton(
+                text="Cancel Application",
+                callback_data=f"cancel_application_{trip['_id']}",
+            )
+            inline_keyboard.add(cancel_button)
+
+            trip_info = (
+                f"Date: {trip['date']}\n"
+                f"Start Location: {trip['start_location']}\n"
+                f"End Location: {trip['end_location']}\n"
+                f"Price: {trip['price']} som\n"
+                f"Car Info: {trip['car_info']}"
+            )
+
+            await message.answer(trip_info, reply_markup=inline_keyboard)
+    else:
+        await message.answer("You haven't applied for any trips yet.")
+
+
+@dp.callback_query_handler(lambda query: query.data.startswith("cancel_application_"))
+async def process_cancel_application_button(callback_query: CallbackQuery):
+    trip_id = callback_query.data.split("_")[2]
+    trip_id = ObjectId(trip_id)
+
+    trip_info = db["mycollection"].find_one({"_id": trip_id})
+
+    if trip_info:
+        owner_id = trip_info["user_id"]
+        applicant_id = callback_query.from_user.id
+
+        if applicant_id in trip_info["applicants"]:
+            trip_info["applicants"].remove(applicant_id)
+            db["mycollection"].update_one(
+                {"_id": trip_id},
+                {
+                    "$set": {
+                        "applicants": trip_info["applicants"],
+                    }
+                },
+            )
+
+            await bot.send_message(
+                applicant_id, "Your application has been canceled successfully."
+            )
+
+            await bot.send_message(
+                owner_id,
+                f"User {callback_query.from_user.username} has canceled their application for the trip.",
+            )
+
+            await bot.answer_callback_query(
+                callback_query.id, text="Application successfully canceled."
+            )
+        else:
+            await bot.answer_callback_query(
+                callback_query.id, text="You have not applied for this trip."
+            )
+    else:
+        await bot.answer_callback_query(
+            callback_query.id, text="Trip information not found."
+        )
 
 
 async def on_startup(_):

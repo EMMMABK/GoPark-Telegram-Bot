@@ -1,4 +1,4 @@
-#!/Users/imranmzakirov/Desktop/bot/venv/bin/python3.11
+#!/Users/imranmzakirov/Desktop/GoPark-Telegram-Bot/venv/bin/python3.11
 # -*- coding: utf-8 -*-
 import re
 import sys
